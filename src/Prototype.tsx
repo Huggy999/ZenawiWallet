@@ -28,9 +28,11 @@ import {
   type FormEvent,
   type ReactNode,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
+import posthog from "posthog-js";
 import {
   BottomSheet,
   FlowStack,
@@ -44,6 +46,32 @@ import {
 import bitcoinLogo from "./assets/bitcoin.png";
 import ethereumLogo from "./assets/ethereum.png";
 import usdcLogo from "./assets/usdc.png";
+
+const POSTHOG_PROJECT_KEY = "phc_pmpCcRFjXjo6gqbP6f3Lh7jcrrLmNFbPRQ92WoCxVMsN";
+
+if (typeof window !== "undefined") {
+  posthog.init(POSTHOG_PROJECT_KEY, {
+    api_host: "https://us.i.posthog.com",
+    defaults: "2026-05-30",
+    autocapture: false,
+    capture_pageview: false,
+    capture_pageleave: false,
+    capture_dead_clicks: false,
+    capture_heatmaps: false,
+    capture_performance: false,
+    capture_exceptions: true,
+    disable_session_recording: true,
+    disable_surveys: true,
+    person_profiles: "never",
+    persistence: "memory",
+  });
+}
+
+type AnalyticsProperties = Record<string, string | boolean>;
+
+function trackEvent(event: string, properties?: AnalyticsProperties) {
+  posthog.capture(event, properties);
+}
 
 type Asset = {
   symbol: "BTC" | "ETH" | "USDC";
@@ -130,12 +158,15 @@ function ScreenHeader({ title, flow }: { title: string; flow: FlowControls }) {
 }
 
 function BottomNav({ active, flow }: { active: "wallet" | "activity" | "settings"; flow: FlowControls }) {
-  const go = (screen: FlowScreen) => flow.replace(screen);
+  const go = (tab: "wallet" | "activity" | "settings", screen: FlowScreen) => {
+    trackEvent("wallet_tab_opened", { tab });
+    flow.replace(screen);
+  };
   return (
     <nav className="bottom-nav" aria-label="Primary navigation">
-      <button type="button" className={active === "wallet" ? "active" : ""} onClick={() => go(HOME_SCREEN)}><HomeIcon /><span>Wallet</span></button>
-      <button type="button" className={active === "activity" ? "active" : ""} onClick={() => go(ACTIVITY_SCREEN)}><ClockIcon /><span>Activity</span></button>
-      <button type="button" className={active === "settings" ? "active" : ""} onClick={() => go(SETTINGS_SCREEN)}><GearIcon /><span>Settings</span></button>
+      <button type="button" className={active === "wallet" ? "active" : ""} onClick={() => go("wallet", HOME_SCREEN)}><HomeIcon /><span>Wallet</span></button>
+      <button type="button" className={active === "activity" ? "active" : ""} onClick={() => go("activity", ACTIVITY_SCREEN)}><ClockIcon /><span>Activity</span></button>
+      <button type="button" className={active === "settings" ? "active" : ""} onClick={() => go("settings", SETTINGS_SCREEN)}><GearIcon /><span>Settings</span></button>
     </nav>
   );
 }
@@ -155,7 +186,10 @@ function HomeScreen() {
         <main className="wallet-home" data-testid="wallet-home">
           <div className="home-topbar">
             <BrandMark />
-            <IconButton label={balancesVisible ? "Hide balances" : "Show balances"} onClick={() => setBalancesVisible(!balancesVisible)}>
+            <IconButton label={balancesVisible ? "Hide balances" : "Show balances"} onClick={() => {
+              trackEvent("wallet_balance_visibility_changed", { visible: !balancesVisible });
+              setBalancesVisible(!balancesVisible);
+            }}>
               {balancesVisible ? <EyeOpenIcon /> : <EyeClosedIcon />}
             </IconButton>
           </div>
@@ -171,14 +205,23 @@ function HomeScreen() {
           <div className="ownership-note"><span className="ownership-icon"><LockClosedIcon /></span><div><strong>Your keys, your wallet</strong><span>You’re in full control of your assets.</span></div><ChevronRightIcon /></div>
           <section className="action-cluster" aria-label="Wallet actions">
             <div className="quick-actions">
-              <button type="button" className="action-card send-card" onClick={() => flow.push(SEND_SCREEN)}>
+              <button type="button" className="action-card send-card" onClick={() => {
+                trackEvent("wallet_send_started");
+                flow.push(SEND_SCREEN);
+              }}>
                 <span className="action-icon"><ArrowTopRightIcon /></span><span className="action-copy"><strong>Send</strong><small>From your wallet</small></span>
               </button>
-              <button type="button" className="action-card receive-card" onClick={() => flow.push(RECEIVE_SCREEN)}>
+              <button type="button" className="action-card receive-card" onClick={() => {
+                trackEvent("wallet_receive_opened");
+                flow.push(RECEIVE_SCREEN);
+              }}>
                 <span className="action-icon"><ArrowBottomLeftIcon /></span><span className="action-copy"><strong>Receive</strong><small>To your wallet</small></span>
               </button>
             </div>
-            <button type="button" className="buy-banner" onClick={() => setBuyOpen(true)}>
+            <button type="button" className="buy-banner" onClick={() => {
+              trackEvent("wallet_buy_provider_opened");
+              setBuyOpen(true);
+            }}>
               <span className="plus-pill"><PlusIcon /></span><span><strong>Buy crypto</strong><small>Powered by MoonPay</small></span><ChevronRightIcon />
             </button>
           </section>
@@ -315,7 +358,10 @@ function ManageAssetsScreen() {
 
 function SendScreen() {
   const flow = useFlow();
-  return <MobileScroll className="app-screen"><main className="standard-page send-select" data-testid="send-screen"><p className="page-intro">Choose the asset you want to send.</p><div className="choice-list asset-choices">{assets.map((asset) => <button type="button" key={asset.symbol} onClick={() => flow.push(makeSendFormScreen(asset))}><AssetLogo asset={asset} /><span><strong>{asset.name}</strong><small>Available · {asset.holdings}</small></span><ChevronRightIcon /></button>)}</div><div className="safety-callout"><InfoCircledIcon /><p>Always confirm the network and first characters of an address before sending.</p></div></main></MobileScroll>;
+  return <MobileScroll className="app-screen"><main className="standard-page send-select" data-testid="send-screen"><p className="page-intro">Choose the asset you want to send.</p><div className="choice-list asset-choices">{assets.map((asset) => <button type="button" key={asset.symbol} onClick={() => {
+    trackEvent("wallet_send_asset_selected", { asset: asset.symbol });
+    flow.push(makeSendFormScreen(asset));
+  }}><AssetLogo asset={asset} /><span><strong>{asset.name}</strong><small>Available · {asset.holdings}</small></span><ChevronRightIcon /></button>)}</div><div className="safety-callout"><InfoCircledIcon /><p>Always confirm the network and first characters of an address before sending.</p></div></main></MobileScroll>;
 }
 
 function SendFormScreen({ asset }: { asset: Asset }) {
@@ -323,7 +369,13 @@ function SendFormScreen({ asset }: { asset: Asset }) {
   const [address, setAddress] = useState("");
   const [amount, setAmount] = useState("");
   const valid = address.trim().length >= 8 && Number(amount) > 0;
-  const handleSubmit = (event: FormEvent) => { event.preventDefault(); if (valid) flow.push(makeReviewScreen(asset, address, amount)); };
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (valid) {
+      trackEvent("wallet_send_reviewed", { asset: asset.symbol });
+      flow.push(makeReviewScreen(asset, address, amount));
+    }
+  };
   const price = Number(asset.price.replace(/[$,]/g, ""));
   return (
     <MobileScroll className="app-screen"><form className="standard-page send-form" onSubmit={handleSubmit} data-testid="send-form">
@@ -337,7 +389,10 @@ function SendFormScreen({ asset }: { asset: Asset }) {
 
 function ReviewSendScreen({ asset, address, amount }: { asset: Asset; address: string; amount: string }) {
   const flow = useFlow();
-  return <MobileScroll className="app-screen"><main className="standard-page review-page" data-testid="review-send-screen"><div className="review-amount"><AssetLogo asset={asset} size="large" /><span>YOU SEND</span><h2>{amount} {asset.symbol}</h2><p>Network fee estimate included below</p></div><div className="detail-card"><DetailRow label="To" value={`${address.slice(0, 7)}…${address.slice(-5)}`} /><DetailRow label="Network" value={asset.symbol === "BTC" ? "Bitcoin" : "Ethereum"} /><DetailRow label="Network fee" value={asset.symbol === "BTC" ? "0.000021 BTC" : "0.0018 ETH"} /><DetailRow label="Arrival" value="Usually under 10 min" /></div><div className="safety-callout warm"><InfoCircledIcon /><p>Crypto transfers are irreversible. Confirm the address before continuing.</p></div><button className="primary-button" type="button" onClick={() => flow.push(SEND_SUCCESS_SCREEN)} data-testid="confirm-send">Hold to confirm</button></main></MobileScroll>;
+  return <MobileScroll className="app-screen"><main className="standard-page review-page" data-testid="review-send-screen"><div className="review-amount"><AssetLogo asset={asset} size="large" /><span>YOU SEND</span><h2>{amount} {asset.symbol}</h2><p>Network fee estimate included below</p></div><div className="detail-card"><DetailRow label="To" value={`${address.slice(0, 7)}…${address.slice(-5)}`} /><DetailRow label="Network" value={asset.symbol === "BTC" ? "Bitcoin" : "Ethereum"} /><DetailRow label="Network fee" value={asset.symbol === "BTC" ? "0.000021 BTC" : "0.0018 ETH"} /><DetailRow label="Arrival" value="Usually under 10 min" /></div><div className="safety-callout warm"><InfoCircledIcon /><p>Crypto transfers are irreversible. Confirm the address before continuing.</p></div><button className="primary-button" type="button" onClick={() => {
+    trackEvent("wallet_send_demo_submitted", { asset: asset.symbol });
+    flow.push(SEND_SUCCESS_SCREEN);
+  }} data-testid="confirm-send">Hold to confirm</button></main></MobileScroll>;
 }
 
 function SendSuccessScreen() {
@@ -348,7 +403,11 @@ function SendSuccessScreen() {
 function ReceiveScreen() {
   const [selected, setSelected] = useState(assets[0]);
   const [copied, setCopied] = useState(false);
-  const copyAddress = async () => { await navigator.clipboard?.writeText(selected.address); setCopied(true); };
+  const copyAddress = async () => {
+    await navigator.clipboard?.writeText(selected.address);
+    trackEvent("wallet_address_copied", { asset: selected.symbol });
+    setCopied(true);
+  };
   return <MobileScroll className="app-screen"><main className="standard-page receive-page" data-testid="receive-screen"><p className="page-intro">Choose an asset and share the matching address.</p><div className="asset-tabs" aria-label="Receive asset">{assets.map((asset) => <button type="button" className={selected.symbol === asset.symbol ? "active" : ""} key={asset.symbol} onClick={() => { setSelected(asset); setCopied(false); }}><AssetLogo asset={asset} /><span>{asset.symbol}</span></button>)}</div><div className="address-card"><AssetLogo asset={selected} size="large" /><span>Your {selected.name} address</span><strong>{selected.address}</strong><button type="button" onClick={copyAddress}>{copied ? <CheckCircledIcon /> : <CopyIcon />}{copied ? "Copied" : "Copy address"}</button></div><div className="safety-callout"><InfoCircledIcon /><p>Only send {selected.symbol} on the {selected.symbol === "BTC" ? "Bitcoin" : "Ethereum"} network to this address.</p></div></main></MobileScroll>;
 }
 
@@ -360,7 +419,13 @@ function AssetDetailScreen({ asset }: { asset: Asset }) {
 
 function WelcomeScreen() {
   const flow = useFlow();
-  return <MobileScroll className="app-screen onboarding-screen"><main className="welcome-page" data-testid="onboarding-welcome"><div className="onboarding-brand"><div className="brand-emblem"><LockClosedIcon /></div><BrandMark /></div><div className="welcome-copy"><p className="eyebrow">SELF-CUSTODY, SIMPLIFIED</p><h1>Your money.<br />Your keys.</h1><p>Create a private wallet you control — built for calm, everyday use.</p></div><div className="onboarding-actions"><button className="primary-button" type="button" onClick={() => flow.push(CREATE_WALLET_SCREEN)}>Create a new wallet</button><button className="secondary-button" type="button" onClick={() => flow.push(IMPORT_WALLET_SCREEN)}>Import existing wallet</button><button className="text-button" type="button" onClick={() => flow.replace(HOME_SCREEN)}>Exit preview</button></div></main></MobileScroll>;
+  return <MobileScroll className="app-screen onboarding-screen"><main className="welcome-page" data-testid="onboarding-welcome"><div className="onboarding-brand"><div className="brand-emblem"><LockClosedIcon /></div><BrandMark /></div><div className="welcome-copy"><p className="eyebrow">SELF-CUSTODY, SIMPLIFIED</p><h1>Your money.<br />Your keys.</h1><p>Create a private wallet you control — built for calm, everyday use.</p></div><div className="onboarding-actions"><button className="primary-button" type="button" onClick={() => {
+    trackEvent("wallet_onboarding_started", { method: "create" });
+    flow.push(CREATE_WALLET_SCREEN);
+  }}>Create a new wallet</button><button className="secondary-button" type="button" onClick={() => {
+    trackEvent("wallet_onboarding_started", { method: "import" });
+    flow.push(IMPORT_WALLET_SCREEN);
+  }}>Import existing wallet</button><button className="text-button" type="button" onClick={() => flow.replace(HOME_SCREEN)}>Exit preview</button></div></main></MobileScroll>;
 }
 
 function CreateWalletScreen() {
@@ -384,7 +449,10 @@ function ImportWalletScreen() {
 
 function WalletReadyScreen() {
   const flow = useFlow();
-  return <MobileScroll className="app-screen"><main className="success-page" data-testid="wallet-ready"><div className="status-orb success"><CheckCircledIcon /></div><p className="eyebrow">READY</p><h1>Your wallet is set</h1><p>This preview is protected with device security and ready to explore.</p><button className="primary-button" type="button" onClick={() => flow.replace(HOME_SCREEN)}>Open wallet</button></main></MobileScroll>;
+  return <MobileScroll className="app-screen"><main className="success-page" data-testid="wallet-ready"><div className="status-orb success"><CheckCircledIcon /></div><p className="eyebrow">READY</p><h1>Your wallet is set</h1><p>This preview is protected with device security and ready to explore.</p><button className="primary-button" type="button" onClick={() => {
+    trackEvent("wallet_onboarding_completed");
+    flow.replace(HOME_SCREEN);
+  }}>Open wallet</button></main></MobileScroll>;
 }
 
 function DetailRow({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
@@ -420,5 +488,8 @@ function makeReviewScreen(asset: Asset, address: string, amount: string): FlowSc
 export default function Prototype() {
   const [balancesVisible, setBalancesVisible] = useState(true);
   const value = useMemo(() => ({ balancesVisible, setBalancesVisible }), [balancesVisible]);
+  useEffect(() => {
+    trackEvent("wallet_app_loaded", { app: "tersa-wallet", mode: "prototype" });
+  }, []);
   return <WalletContext.Provider value={value}><FlowStack initial={HOME_SCREEN} /></WalletContext.Provider>;
 }
